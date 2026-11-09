@@ -1485,6 +1485,7 @@ function initSupabaseClient() {
       supabase = window.supabase.createClient(storedSupabaseCfg.url, storedSupabaseCfg.key);
       console.log('[Supabase] Connected to project:', storedSupabaseCfg.url);
       updateSyncIndicator('synced', '🟢 Online & Connected');
+      setupRealtimeSubscription();
       return true;
     } else {
       supabase = null;
@@ -1782,6 +1783,29 @@ async function syncNow() {
   }
 }
 
+let realtimeChannel = null;
+function setupRealtimeSubscription() {
+  if (!supabase) return;
+  try {
+    if (realtimeChannel) {
+      try { supabase.removeChannel(realtimeChannel); } catch (e) {}
+    }
+    realtimeChannel = supabase
+      .channel('pos-realtime-sync')
+      .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
+        console.log('[Realtime Sync Event]', payload.eventType, payload.table);
+        if (currentShopId) {
+          pullRemoteUpdates(currentShopId);
+        }
+      })
+      .subscribe((status) => {
+        console.log('[Realtime Sync Status]', status);
+      });
+  } catch (err) {
+    console.warn('[Realtime Setup Error]', err.message);
+  }
+}
+
 async function pullRemoteUpdates(shopId) {
   if (!supabase || !navigator.onLine) return;
   try {
@@ -1805,16 +1829,16 @@ async function pullRemoteUpdates(shopId) {
 
     // B. Pull Services
     const { data: svcData } = await supabase.from('services').select('*').eq('shop_id', shopId);
-    if (Array.isArray(svcData) && svcData.length) {
+    if (Array.isArray(svcData)) {
       svc = svcData.map(s => ({ id: s.id, n: s.name || s.n, r: s.rate !== undefined ? s.rate : s.r }));
       L.set('svc', svc);
       drawChips();
       if ($('svc').classList.contains('on')) drawSvc();
     }
 
-    // C. Pull Bills & Payments
+    // C. Pull Bills & Payments (Clean mirror: allows deletions to reflect instantly)
     const { data: billsData } = await supabase.from('bills').select('*').eq('shop_id', shopId).order('no', { ascending: true });
-    if (Array.isArray(billsData) && billsData.length) {
+    if (Array.isArray(billsData)) {
       bills = billsData.map(b => ({
         no: b.no,
         date: b.date,
@@ -1834,22 +1858,24 @@ async function pullRemoteUpdates(shopId) {
     }
 
     const { data: paysData } = await supabase.from('payments').select('*').eq('shop_id', shopId);
-    if (Array.isArray(paysData) && paysData.length) {
+    if (Array.isArray(paysData)) {
       pays = paysData.map(p => ({ no: p.no, date: p.date, amt: p.amt, mode: p.mode }));
       L.set('pays', pays);
     }
 
     // D. Pull Expenses
     const { data: expsData } = await supabase.from('expenses').select('*').eq('shop_id', shopId);
-    if (Array.isArray(expsData) && expsData.length) {
+    if (Array.isArray(expsData)) {
       exps = expsData.map(e => ({ id: e.id, date: e.date, cat: e.cat, amt: e.amt, mode: e.mode, note: e.note || '' }));
       L.set('exps', exps);
     }
 
-    // Refresh UI if visible
-    if ($('dash').classList.contains('on')) drawDash();
-    if ($('due').classList.contains('on')) drawDue();
-    if ($('hist').classList.contains('on')) drawHist();
+    // Instant Refresh for All Open Tabs
+    drawDash();
+    if ($('due') && $('due').classList.contains('on')) drawDue();
+    if ($('hist') && $('hist').classList.contains('on')) drawHist();
+    if ($('acc') && $('acc').classList.contains('on')) drawAcc();
+    if ($('exp') && $('exp').classList.contains('on')) drawExp();
   } catch (err) {
     console.warn('[Sync] Pull error:', err.message);
   }
@@ -1874,7 +1900,7 @@ setInterval(() => {
   } else {
     updateSyncIndicator('offline');
   }
-}, 30000);
+}, 8000);
 
 $('syncBadge').onclick = () => {
   if (!supabase) {
