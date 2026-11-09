@@ -1375,7 +1375,7 @@ tr:hover td { background-color: rgba(248, 250, 252, 0.7); }
   </div>
 
   <!-- Stealth Master Provider Panel (Hidden completely by default) -->
-  <div class="card adm hide" id="supabaseMasterCard" style="border:2px dashed #0284c7;background:#f0f9ff">
+  <div class="card hide" id="supabaseMasterCard" style="display:none !important;border:2px dashed #0284c7;background:#f0f9ff">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <h2 style="margin:0;color:#0369a1">⚙️ प्रोव्हायडर मास्टर डेटाबेस (Master Cloud Config)</h2>
       <button type="button" class="btn sm" id="btnCloseMasterPanel" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc">🔒 बंद करा</button>
@@ -1915,6 +1915,7 @@ function applyRole() {
   document.querySelectorAll('.adm').forEach(e => {
     e.classList.toggle('hide', !isAdm);
   });
+  if (!isMasterActive) setMasterVisibility(false);
   if (me) {
     $('who').textContent = me.u;
     $('whoRole').textContent = isAdm ? 'ADMIN / OWNER' : 'CASHIER';
@@ -3398,6 +3399,23 @@ function populateSupabaseCfgInputs() {
 // 5-click stealth trigger on header logo to open Master Panel
 let masterClickCount = 0;
 let masterClickTimer = null;
+let isMasterActive = false;
+
+function setMasterVisibility(visible) {
+  isMasterActive = visible;
+  const p = $('supabaseMasterCard');
+  if (!p) return;
+  if (visible) {
+    p.classList.remove('hide');
+    p.style.setProperty('display', 'block', 'important');
+    populateSupabaseCfgInputs();
+    p.scrollIntoView({ behavior: 'smooth' });
+  } else {
+    p.classList.add('hide');
+    p.style.setProperty('display', 'none', 'important');
+  }
+}
+
 const logoEl = $('masterTriggerLogo') || document.querySelector('.app-header-logo');
 if (logoEl) {
   logoEl.onclick = () => {
@@ -3410,11 +3428,7 @@ if (logoEl) {
       const currentPin = L.get('master_pin', '8899');
       const entered = prompt('Authorization Code:');
       if (entered && entered.trim() === String(currentPin)) {
-        if ($('supabaseMasterCard')) {
-          $('supabaseMasterCard').classList.remove('hide');
-          populateSupabaseCfgInputs();
-          $('supabaseMasterCard').scrollIntoView({ behavior: 'smooth' });
-        }
+        setMasterVisibility(true);
       }
     }
   };
@@ -3422,7 +3436,7 @@ if (logoEl) {
 
 if ($('btnCloseMasterPanel')) {
   $('btnCloseMasterPanel').onclick = () => {
-    if ($('supabaseMasterCard')) $('supabaseMasterCard').classList.add('hide');
+    setMasterVisibility(false);
   };
 }
 
