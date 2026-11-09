@@ -671,7 +671,7 @@ tr:hover td { background-color: rgba(248, 250, 252, 0.7); }
     <button data-t="bill">🧾 नवीन बिल</button>
     <button data-t="due">⏳ येणे बाकी</button>
     <button data-t="hist">📁 जुनी बिले</button>
-    <button data-t="acc" class="adm">💰 हिशोब</button>
+    <button data-t="acc">💰 हिशोब</button>
     <button data-t="exp" class="adm">📉 खर्च</button>
     <button data-t="rep" class="adm">📈 अहवाल</button>
     <button data-t="svc" class="adm">🏷️ सेवा व दर</button>
@@ -1084,12 +1084,12 @@ tr:hover td { background-color: rgba(248, 250, 252, 0.7); }
 </section>
 
 <!-- Accounts Tab -->
-<section id="acc" class="tab adm">
+<section id="acc" class="tab">
   <div class="card">
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap" id="aMode">
-      <button class="btn sm" data-m="day">दिवसाचा हिशोब</button>
-      <button class="btn alt sm" data-m="month">मासिक हिशोब</button>
-      <button class="btn alt sm" data-m="year">वार्षिक हिशोब</button>
+      <button class="btn sm" data-m="day">दिवसाचा हिशोब (Daily Accounts)</button>
+      <button class="btn alt sm adm" data-m="month">मासिक हिशोब (Monthly)</button>
+      <button class="btn alt sm adm" data-m="year">वार्षिक हिशोब (Yearly)</button>
     </div>
     
     <div class="row">
@@ -2486,6 +2486,12 @@ function aRange() {
 }
 
 function drawAcc() {
+  if (!isAdmin()) {
+    amode = 'day';
+    $('aDayBox').classList.remove('hide');
+    $('aMonBox').classList.add('hide');
+    $('aYearBox').classList.add('hide');
+  }
   const r = aRange();
   if (!r) { alert('तारीख किंवा वर्ष तपासा.'); return; }
   const [a, b, title] = r;
