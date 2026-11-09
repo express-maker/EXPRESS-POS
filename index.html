@@ -1086,7 +1086,7 @@ tr:hover td { background-color: rgba(248, 250, 252, 0.7); }
 <!-- Accounts Tab -->
 <section id="acc" class="tab">
   <div class="card">
-    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap" id="aMode">
+    <div class="adm" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap" id="aMode">
       <button class="btn sm" data-m="day">दिवसाचा हिशोब (Daily Accounts)</button>
       <button class="btn alt sm adm" data-m="month">मासिक हिशोब (Monthly)</button>
       <button class="btn alt sm adm" data-m="year">वार्षिक हिशोब (Yearly)</button>
@@ -1097,7 +1097,7 @@ tr:hover td { background-color: rgba(248, 250, 252, 0.7); }
       <div id="aMonBox" class="hide"><label>महिना</label><select id="aMon"></select></div>
       <div id="aYearBox" class="hide"><label>वर्ष</label><input id="aYear" type="number" min="1990" max="2100"></div>
       <div style="align-self:end">
-        <button class="btn alt" id="aCsv">📊 CSV डाउनलोड</button>
+        <button class="btn alt adm" id="aCsv">📊 CSV डाउनलोड</button>
       </div>
     </div>
 
@@ -1829,12 +1829,23 @@ async function pullRemoteUpdates(shopId) {
 
     // B. Pull Services
     const { data: svcData } = await supabase.from('services').select('*').eq('shop_id', shopId);
-    if (Array.isArray(svcData)) {
+    if (Array.isArray(svcData) && svcData.length > 0) {
       svc = svcData.map(s => ({ id: s.id, n: s.name || s.n, r: s.rate !== undefined ? s.rate : s.r }));
       L.set('svc', svc);
-      drawChips();
-      if ($('svc').classList.contains('on')) drawSvc();
+    } else {
+      // If remote has no services for this shop yet, ensure local default services exist and seed them
+      if (!svc || !svc.length) {
+        svc = DEF_SVC.map((s, i) => ({ id: i + 1, n: s[0], r: s[1] }));
+        L.set('svc', svc);
+        if (isAdmin()) {
+          svc.forEach(s => {
+            queueMutation('services', 'upsert', { id: s.id, name: s.n, rate: s.r, shop_id: shopId });
+          });
+        }
+      }
     }
+    drawChips();
+    if ($('svc') && $('svc').classList.contains('on')) drawSvc();
 
     // C. Pull Bills & Payments (Clean mirror: allows deletions to reflect instantly)
     const { data: billsData } = await supabase.from('bills').select('*').eq('shop_id', shopId).order('no', { ascending: true });
@@ -1929,14 +1940,15 @@ $('nav').onclick = e => {
   const t = btn.dataset.t;
   if (!t) return;
   
-  // RBAC Tab Protection
-  if (['acc', 'exp', 'rep', 'svc'].includes(t) && !isAdmin()) {
+  // RBAC Tab Protection (Cashier can access 'acc' for daily register)
+  if (['exp', 'rep', 'svc'].includes(t) && !isAdmin()) {
     alert('या पर्यायासाठी ॲडमिन (Admin) परवानगी आवश्यक आहे.');
     return;
   }
 
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b === btn));
   document.querySelectorAll('.tab').forEach(s => s.classList.toggle('on', s.id === t));
+  if (t === 'bill') { drawChips(); }
   
   tickDate();
   if (t === 'due') drawDue();
@@ -2529,9 +2541,13 @@ function aRange() {
 function drawAcc() {
   if (!isAdmin()) {
     amode = 'day';
+    $('aDate').value = today();
+    $('aDate').disabled = true;
     $('aDayBox').classList.remove('hide');
     $('aMonBox').classList.add('hide');
     $('aYearBox').classList.add('hide');
+  } else {
+    $('aDate').disabled = false;
   }
   const r = aRange();
   if (!r) { alert('तारीख किंवा वर्ष तपासा.'); return; }
@@ -3878,8 +3894,13 @@ function completeLogin(pw) {
   $('lp').value = '';
   
   applyRole();
+  initSupabaseClient();
+  if (supabase && currentShopId) {
+    pullRemoteUpdates(currentShopId);
+  }
   drawDash();
   initBill();
+  drawChips();
   updateSyncIndicator(navigator.onLine ? 'synced' : 'offline');
 
   if (pw === 'admin123' || pw === 'cashier123') {
@@ -4726,10 +4747,15 @@ new MutationObserver(ms => ms.forEach(m => {
   $('aMon').value = n.getMonth();
 
   checkDeviceSetupUrl();
+  initSupabaseClient();
   populateShopDropdowns();
   updateShopHeader();
+  if (supabase && currentShopId) {
+    pullRemoteUpdates(currentShopId);
+  }
   applyRole();
   applyLang();
+  drawChips();
   $('lu').focus();
 })();
 
