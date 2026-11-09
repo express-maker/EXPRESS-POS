@@ -1651,8 +1651,25 @@ const today = () => {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 };
+const normD = d => {
+  if (!d) return '';
+  d = String(d).trim();
+  if (d.includes('T')) d = d.split('T')[0];
+  if (d.includes('/') || (d.includes('-') && d.split('-')[0].length === 2)) {
+    const sep = d.includes('/') ? '/' : '-';
+    const p = d.split(sep);
+    if (p.length === 3 && p[2].length === 4) {
+      return p[2] + '-' + p[1].padStart(2, '0') + '-' + p[0].padStart(2, '0');
+    }
+  }
+  return d.slice(0, 10);
+};
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const fmtD = d => d ? d.split('-').reverse().join('/') : '';
+const fmtD = d => {
+  if (!d) return '';
+  const nd = normD(d);
+  return nd ? nd.split('-').reverse().join('/') : d;
+};
 function sanitizeLegacyBills() {
   let changed = false;
   bills.forEach((b, idx) => {
@@ -2435,20 +2452,36 @@ $('hBody').onclick = e => {
 
 /* --- Dashboard KPIs --- */
 function EXM(p) {
-  return exps.filter(e => e.date.slice(0, p.length) === p).reduce((a, e) => a + e.amt, 0);
+  return exps.filter(e => normD(e.date).slice(0, p.length) === p).reduce((a, e) => a + e.amt, 0);
 }
 
 function drawDash() {
   const n = new Date(), t = today(), ym = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
+  
+  // 1. Ensure pays is fully synced with all bills for this shop
+  const shopBills = getShopBills();
+  shopBills.forEach(b => {
+    if (b.paid > 0 && !pays.some(p => String(p.no) === String(b.no))) {
+      pays.push({ no: b.no, date: b.date, amt: b.paid, mode: b.mode, shop_id: b.shopId || currentShopId });
+    }
+  });
+
   const col = f => {
     const md = { 'रोख': 0, 'UPI / फोनपे': 0, 'इतर': 0 };
-    pays.filter(f).forEach(p => md[p.mode in md ? p.mode : 'इतर'] += p.amt);
+    pays.forEach(p => {
+      if (f(p)) {
+        const m = p.mode in md ? p.mode : (p.mode && p.mode.includes('UPI') ? 'UPI / फोनपे' : 'इतर');
+        md[m] += +p.amt || 0;
+      }
+    });
     return md;
   };
-  const T = col(p => p.date === t), M = col(p => p.date.slice(0, 7) === ym);
-  const sale = f => getShopBills().filter(f).reduce((a, b) => a + b.net, 0);
-  const cnt = f => getShopBills().filter(f).length;
-  const dues = getShopBills().filter(b => b.net > b.paid).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.no - b.no);
+
+  const T = col(p => normD(p.date) === t);
+  const M = col(p => normD(p.date).slice(0, 7) === ym);
+  const sale = f => shopBills.filter(f).reduce((a, b) => a + (+b.net || 0), 0);
+  const cnt = f => shopBills.filter(f).length;
+  const dues = shopBills.filter(b => b.net > b.paid).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.no - b.no);
   const total = dues.reduce((a, b) => a + b.net - b.paid, 0);
   const people = new Set(dues.map(b => b.mob || b.name || String(b.no))).size;
   const adm = isAdmin();
@@ -2483,7 +2516,7 @@ function drawDash() {
       '</table>' +
     '</div>';
 
-  $('dSum').innerHTML = summ('आजचा सारांश (Today)', T, b => b.date === t) + summ('या महिन्याचा सारांश (This Month)', M, b => b.date.slice(0, 7) === ym);
+  $('dSum').innerHTML = summ('आजचा सारांश (Today)', T, b => normD(b.date) === t) + summ('या महिन्याचा सारांश (This Month)', M, b => normD(b.date).slice(0, 7) === ym);
 
   $('dEmpty').style.display = dues.length ? 'none' : 'block';
   $('dBody').innerHTML = dues.slice(0, 10).map(b => 
