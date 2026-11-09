@@ -1730,22 +1730,37 @@ async function syncNow() {
 
   try {
     // 1. Flush local mutation queue to cloud
+    let consecutiveErrors = 0;
     while (syncQueue.length > 0) {
       const item = syncQueue[0];
       let err = null;
       
       if (item.action === 'upsert') {
         const payload = Object.assign({}, item.data, { shop_id: item.shopId || currentShopId });
-        const res = await supabase.from(item.table).upsert(payload);
-        err = res.error;
+        if (item.table === 'payments' && !payload.id) {
+          const res = await supabase.from(item.table).insert(payload);
+          err = res.error;
+        } else {
+          const res = await supabase.from(item.table).upsert(payload);
+          err = res.error;
+        }
       } else if (item.action === 'delete') {
         const res = await supabase.from(item.table).delete().match(item.data);
         err = res.error;
       }
 
       if (err) {
-        console.warn('[Sync] Error pushing mutation:', err.message);
-        break; // Stop and retry later if network or auth error occurs
+        console.warn('[Sync] Error on table ' + item.table + ':', err.message);
+        consecutiveErrors++;
+        // If schema or constraint error on single legacy item, discard and continue
+        if (err.message && (err.message.includes('column') || err.message.includes('constraint') || err.message.includes('not-null'))) {
+          syncQueue.shift();
+          L.set('sync_queue', syncQueue);
+          continue;
+        }
+        if (consecutiveErrors >= 3) break;
+      } else {
+        consecutiveErrors = 0;
       }
 
       // Successfully synced item, dequeue
