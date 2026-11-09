@@ -903,6 +903,18 @@ tr:hover td { background-color: rgba(248, 250, 252, 0.7); }
 
 <!-- Dashboard Tab -->
 <section id="dash" class="tab on">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;background:#ffffff;padding:8px 14px;border-radius:8px;border:1px solid var(--border)">
+    <div style="display:flex;align-items:center;gap:8px;font-size:13.5px;flex-wrap:wrap">
+      <span style="font-weight:700;color:var(--brand)">📅 हिशोब दिनांक (Date):</span>
+      <input id="dashDate" type="date" style="padding:5px 8px;font-size:13px;border-radius:6px;border:1px solid var(--border)">
+      <button type="button" class="btn alt sm" id="btnDashToday">आज (Today)</button>
+    </div>
+    <div>
+      <button type="button" class="btn sm ok" id="btnDashRefresh" style="display:inline-flex;align-items:center;gap:4px">
+        🔄 त्वरित रिफ्रेश (Live Sync)
+      </button>
+    </div>
+  </div>
   <div class="stats" id="dKpi"></div>
   <div class="row adm" id="dSum" style="margin-bottom:16px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))"></div>
   <div class="card wrap">
@@ -1865,7 +1877,10 @@ async function pullRemoteUpdates(shopId) {
     if ($('svc') && $('svc').classList.contains('on')) drawSvc();
 
     // C. Pull Bills & Payments (Clean mirror: allows deletions to reflect instantly)
-    const { data: billsData } = await supabase.from('bills').select('*').eq('shop_id', shopId).order('no', { ascending: true });
+    // If shopId matches or pull all bills for dedicated database
+    let bQuery = supabase.from('bills').select('*').order('no', { ascending: true });
+    if (shopId && shopId !== 'shop_demo') bQuery = bQuery.eq('shop_id', shopId);
+    const { data: billsData } = await bQuery;
     if (Array.isArray(billsData)) {
       bills = billsData.map(b => ({
         no: b.no,
@@ -1879,7 +1894,7 @@ async function pullRemoteUpdates(shopId) {
         paid: b.paid,
         mode: b.mode,
         note: b.note || '',
-        shopId: b.shop_id || shopId,
+        shopId: currentShopId, // Always bind to active shop so it displays!
         createdBy: b.created_by || ''
       }));
       L.set('bills', bills);
@@ -2456,7 +2471,10 @@ function EXM(p) {
 }
 
 function drawDash() {
-  const n = new Date(), t = today(), ym = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
+  const dashEl = $('dashDate');
+  if (dashEl && !dashEl.value) dashEl.value = today();
+  const selDate = (dashEl && dashEl.value) ? normD(dashEl.value) : today();
+  const ym = selDate.slice(0, 7);
   
   // 1. Ensure pays is fully synced with all bills for this shop
   const shopBills = getShopBills();
@@ -2477,7 +2495,7 @@ function drawDash() {
     return md;
   };
 
-  const T = col(p => normD(p.date) === t);
+  const T = col(p => normD(p.date) === selDate);
   const M = col(p => normD(p.date).slice(0, 7) === ym);
   const sale = f => shopBills.filter(f).reduce((a, b) => a + (+b.net || 0), 0);
   const cnt = f => shopBills.filter(f).length;
@@ -2487,6 +2505,9 @@ function drawDash() {
   const adm = isAdmin();
   const mtot = M['रोख'] + M['UPI / फोनपे'] + M['इतर'];
   const ttot = T['रोख'] + T['UPI / फोनपे'] + T['इतर'];
+
+  const isTodaySelected = (selDate === today());
+  const dayLabel = isTodaySelected ? 'आज' : ('दिनांक (' + fmtD(selDate) + ')');
 
   const kpi = (t2, v, subVal, c, onlyAdm) => {
     if (onlyAdm && !adm) return '';
@@ -2498,12 +2519,12 @@ function drawDash() {
   };
 
   $('dKpi').innerHTML = 
-    kpi('आज रोख जमा', T['रोख'], adm ? 'या महिन्यात: ' + rs(r2(M['रोख'])) : 'आजची रोख पावती', '#15803d') +
-    kpi('आज UPI जमा', T['UPI / फोनपे'], adm ? 'या महिन्यात: ' + rs(r2(M['UPI / फोनपे'])) : 'आजची डिजिटल जमा', '#0f3d63') +
-    kpi('आज एकूण जमा', ttot, adm ? 'या महिन्यात: ' + rs(r2(mtot)) : 'आजचे एकूण कलेक्शन', '#0d9488') +
+    kpi(dayLabel + ' रोख जमा', T['रोख'], adm ? 'या महिन्यात: ' + rs(r2(M['रोख'])) : 'रोख पावती', '#15803d') +
+    kpi(dayLabel + ' UPI जमा', T['UPI / फोनपे'], adm ? 'या महिन्यात: ' + rs(r2(M['UPI / फोनपे'])) : 'डिजिटल जमा', '#0f3d63') +
+    kpi(dayLabel + ' एकूण जमा', ttot, adm ? 'या महिन्यात: ' + rs(r2(mtot)) : 'एकूण कलेक्शन', '#0d9488') +
     kpi('एकूण येणे बाकी', total, dues.length + ' बिले • ' + people + ' ग्राहक', '#b91c1c') +
-    kpi('आजचा खर्च', EXM(t), 'दुकान खर्च', '#d97706', true) +
-    kpi('या महिन्याचा खर्च', EXM(ym), 'आज: ' + rs(r2(EXM(t))), '#d97706', true) +
+    kpi(dayLabel + ' खर्च', EXM(selDate), 'दुकान खर्च', '#d97706', true) +
+    kpi('या महिन्याचा खर्च', EXM(ym), dayLabel + ': ' + rs(r2(EXM(selDate))), '#d97706', true) +
     kpi('महिन्याची शिल्लक', mtot - EXM(ym), 'जमा − खर्च (निव्वळ नफा)', '#1c2b3a', true);
 
   const summ = (title, m, f) => 
@@ -2516,7 +2537,7 @@ function drawDash() {
       '</table>' +
     '</div>';
 
-  $('dSum').innerHTML = summ('आजचा सारांश (Today)', T, b => normD(b.date) === t) + summ('या महिन्याचा सारांश (This Month)', M, b => normD(b.date).slice(0, 7) === ym);
+  $('dSum').innerHTML = summ(dayLabel + ' सारांश', T, b => normD(b.date) === selDate) + summ('या महिन्याचा सारांश (This Month)', M, b => normD(b.date).slice(0, 7) === ym);
 
   $('dEmpty').style.display = dues.length ? 'none' : 'block';
   $('dBody').innerHTML = dues.slice(0, 10).map(b => 
@@ -2533,6 +2554,18 @@ function drawDash() {
     '</tr>'
   ).join('');
 }
+
+if ($('dashDate')) $('dashDate').onchange = drawDash;
+if ($('btnDashToday')) $('btnDashToday').onclick = () => {
+  if ($('dashDate')) $('dashDate').value = today();
+  drawDash();
+};
+if ($('btnDashRefresh')) $('btnDashRefresh').onclick = async () => {
+  if (supabase && currentShopId) {
+    await pullRemoteUpdates(currentShopId);
+  }
+  drawDash();
+};
 
 $('dBody').onclick = e => {
   const d = e.target.closest('button') ? e.target.closest('button').dataset : null;
@@ -3978,6 +4011,12 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) tick
 
 /* --- Bilingual Support: Comprehensive Marathi & English Localization Engine --- */
 const GLOSS = {
+  "हिशोब दिनांक (Date):": "Dashboard Date:",
+  "हिशोब दिनांक": "Dashboard Date",
+  "त्वरित रिफ्रेश (Live Sync)": "Live Refresh",
+  "त्वरित रिफ्रेश": "Live Refresh",
+  "आज (Today)": "Today",
+
   "⚙️ प्रकार व्यवस्थापन (Manage Categories)": "⚙️ Manage Categories",
   "⚙️ प्रकार व्यवस्थापन": "⚙️ Manage Categories",
   "प्रकार व्यवस्थापन": "Manage Categories",
